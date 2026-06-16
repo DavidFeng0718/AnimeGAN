@@ -14,7 +14,7 @@ transform = transforms.Compose([
 ])
 
 
-dataset = My_dataset(r'/Users/fengyanlin/alibaba/Series-of-GAN-for-Anime-main/dataset', transform=transform)   # 数据集位置
+dataset = My_dataset(r'/Users/fengyanlin/alibaba/AnimeGAN/AnimeGAN/dataset', transform=transform)   # 数据集位置
 batch_size, epochs = 128, 500
 my_dataloader = DataLoader(
     dataset=dataset,
