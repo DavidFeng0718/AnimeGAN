@@ -4,43 +4,57 @@ from torchvision import transforms
 from create_dataset import My_dataset, save_img
 from torch.utils.data import DataLoader
 # from model512 import Generator, Discriminator
-from model64 import Generator, Discriminator
+from model512 import Generator, Discriminator
 
 # 图像变换
 transform = transforms.Compose([
-    transforms.Resize((64, 64)),  # 网络设置图片大小为 512*512
+    transforms.Resize((512, 512)),  # 网络设置图片大小为 512*512
     transforms.ToTensor(),
     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
 ])
 
 
-dataset = My_dataset(r'E:\work\GAN\1', transform=transform)   # 数据集位置
-batch_size, epochs = 32, 500
-my_dataloader = DataLoader(dataset=dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+dataset = My_dataset(r'/Users/fengyanlin/alibaba/Series-of-GAN-for-Anime-main/dataset', transform=transform)   # 数据集位置
+batch_size, epochs = 128, 500
+my_dataloader = DataLoader(
+    dataset=dataset,
+    batch_size=batch_size,
+    shuffle=True,
+    drop_last=True,
+    num_workers=16, # A100情况，其余改4
+    pin_memory=True,
+    persistent_workers=True
+)
 
-discriminator = Discriminator()
-generator = Generator()
+if torch.backends.mps.is_available():
+    device = torch.device("mps")
+elif torch.cuda.is_available():
+    device = torch.device("cuda")
+else:
+    device = torch.device("cpu")
 
-if torch.cuda.is_available():
+print("Using device:", device)
 
-    discriminator = discriminator.cuda()
-    generator = generator.cuda()
+discriminator = Discriminator().to(device)
+generator = Generator().to(device)
+
+
 
 
 d_optimizer = torch.optim.Adam(discriminator.parameters(), betas=(0.5, 0.99), lr=1e-4)  # betas为adam算法两个动量参数
 g_optimizer = torch.optim.Adam(generator.parameters(), betas=(0.5, 0.99), lr=1e-4)
-criterion = nn.BCELoss()
+criterion = nn.BCEWithLogitsLoss()
 
 for epoch in range(epochs):
 
     for i, img in enumerate(my_dataloader):
 
-        noise = torch.randn(batch_size, 100, 1, 1).cuda()
-        real_img = img.cuda()
-        fake_img = generator(noise)
+        noise = torch.randn(batch_size, 100, 1, 1).to(device)
+        real_img = img.to(device)
+        fake_img = generator(noise).detach()
 
-        real_label = torch.ones(batch_size).cuda()
-        fake_label = torch.zeros(batch_size).cuda()
+        real_label = torch.ones(batch_size).to(device)
+        fake_label = torch.zeros(batch_size).to(device)
         real_out = discriminator(real_img)
         fake_out = discriminator(fake_img)
         real_loss = criterion(real_out, real_label)
@@ -52,8 +66,8 @@ for epoch in range(epochs):
         d_loss.backward()
         d_optimizer.step()
 
-        noise = torch.randn(batch_size, 100, 1, 1).cuda()
-        fake_img = generator(noise)
+        noise = torch.randn(batch_size, 100, 1, 1).to(device)
+        fake_img = generator(noise).detach()
         output = discriminator(fake_img)
 
         g_loss = criterion(output, real_label)
