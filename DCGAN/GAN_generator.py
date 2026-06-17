@@ -19,7 +19,7 @@ MODEL_REGISTRY = {
 def parse_args():
     parser = argparse.ArgumentParser(description="Generate images from a trained DCGAN checkpoint.")
     parser.add_argument("--config", default="configs/baseline.json", help="Training config used by the checkpoint.")
-    parser.add_argument("--generator", default="generator.pth", help="Generator checkpoint path.")
+    parser.add_argument("--generator", default="checkpoint_epoch_100.pt", help="Generator checkpoint path.")
     parser.add_argument("--discriminator", default="discriminator.pth", help="Discriminator checkpoint path.")
     parser.add_argument("--save-dir", default="genImage", help="Directory for generated images.")
     parser.add_argument("--candidate-num", type=int, default=10000, help="Number of candidates to generate.")
