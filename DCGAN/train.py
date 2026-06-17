@@ -83,6 +83,22 @@ def validate_config(config):
     if "seed" in config and (not isinstance(config["seed"], int) or config["seed"] < 0):
         raise ValueError("Config 'seed' must be a non-negative integer.")
 
+    for key in ["g_steps", "d_train_every", "instance_noise_decay_epochs"]:
+        if key in config and (not isinstance(config[key], int) or config[key] <= 0):
+            raise ValueError(f"Config '{key}' must be a positive integer.")
+
+    for key in ["real_label", "fake_label", "instance_noise_std"]:
+        if key in config and not isinstance(config[key], (int, float)):
+            raise ValueError(f"Config '{key}' must be numeric.")
+
+    real_label = config.get("real_label", 0.9)
+    fake_label = config.get("fake_label", 0.1)
+    if not 0 <= fake_label < real_label <= 1:
+        raise ValueError("Config labels must satisfy 0 <= fake_label < real_label <= 1.")
+
+    if config.get("instance_noise_std", 0.0) < 0:
+        raise ValueError("Config 'instance_noise_std' must be non-negative.")
+
 
 def get_model_classes(image_size):
     return MODEL_REGISTRY[image_size]
@@ -295,6 +311,22 @@ def set_seed(seed):
         torch.cuda.manual_seed_all(seed)
 
 
+def get_instance_noise_std(config, epoch):
+    std = config.get("instance_noise_std", 0.0)
+    if std <= 0:
+        return 0.0
+
+    decay_epochs = config.get("instance_noise_decay_epochs", config["epochs"])
+    progress = min(epoch / decay_epochs, 1.0)
+    return std * (1.0 - progress)
+
+
+def add_instance_noise(images, std):
+    if std <= 0:
+        return images
+    return torch.clamp(images + torch.randn_like(images) * std, -1.0, 1.0)
+
+
 def train(config, config_path):
     seed = config.get("seed")
     if seed is not None:
@@ -348,6 +380,10 @@ def train(config, config_path):
         lr=config["g_lr"],
     )
     criterion = nn.BCEWithLogitsLoss()
+    real_label_value = config.get("real_label", 0.9)
+    fake_label_value = config.get("fake_label", 0.1)
+    g_steps = config.get("g_steps", 1)
+    d_train_every = config.get("d_train_every", 1)
 
     save_config(run_dir, config, len(dataset), config_path, model_file)
     save_environment(run_dir, device)
@@ -384,6 +420,7 @@ def train(config, config_path):
 
         for epoch in range(epochs):
             epoch_rows = []
+            instance_noise_std = get_instance_noise_std(config, epoch)
 
             for i, img in enumerate(my_dataloader):
 
@@ -393,30 +430,36 @@ def train(config, config_path):
 
                 real_label = torch.full(
                     (batch_size,),
-                    0.9,
-                    device=device
-                    )
-                fake_label = torch.zeros(batch_size).to(device)
-                real_out = discriminator(real_img)
-                fake_out = discriminator(fake_img)
+                    real_label_value,
+                    device=device,
+                )
+                fake_label = torch.full(
+                    (batch_size,),
+                    fake_label_value,
+                    device=device,
+                )
+                real_out = discriminator(add_instance_noise(real_img, instance_noise_std))
+                fake_out = discriminator(add_instance_noise(fake_img, instance_noise_std))
                 real_loss = criterion(real_out, real_label)
                 fake_loss = criterion(fake_out, fake_label)
 
                 d_loss = real_loss + fake_loss
-                d_optimizer.zero_grad()
+                if i % d_train_every == 0:
+                    d_optimizer.zero_grad()
+                    d_loss.backward()
+                    d_optimizer.step()
 
-                d_loss.backward()
-                d_optimizer.step()
+                g_loss = None
+                for _ in range(g_steps):
+                    noise = torch.randn(batch_size, config["noise_dim"], 1, 1).to(device)
+                    fake_img = generator(noise)
+                    output = discriminator(add_instance_noise(fake_img, instance_noise_std))
 
-                noise = torch.randn(batch_size, config["noise_dim"], 1, 1).to(device)
-                fake_img = generator(noise)
-                output = discriminator(fake_img)
+                    g_loss = criterion(output, real_label)
+                    g_optimizer.zero_grad()
 
-                g_loss = criterion(output, real_label)
-                g_optimizer.zero_grad()
-
-                g_loss.backward()
-                g_optimizer.step()
+                    g_loss.backward()
+                    g_optimizer.step()
 
                 d_loss_value = d_loss.data.item()
                 g_loss_value = g_loss.data.item()
