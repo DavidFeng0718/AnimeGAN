@@ -12,8 +12,8 @@ import torch
 import torch.nn as nn
 from PIL import Image, ImageDraw
 from torch.utils.data import DataLoader
-from torchvision import transforms
 
+from augmentation import get_transform
 from create_dataset import My_dataset, save_img
 # from model512 import Generator, Discriminator
 from model64 import Generator, Discriminator
@@ -34,15 +34,6 @@ REQUIRED_CONFIG_KEYS = [
     "augmentation",
 ]
 
-SUPPORTED_AUGMENTATIONS = {
-    "none",
-    "flip",
-    "brightness",
-    "contrast",
-    "blur",
-    "sharpen",
-}
-
 PROJECT_DIR = Path(__file__).resolve().parent
 
 
@@ -61,13 +52,6 @@ def load_config(config_path):
     if missing_keys:
         raise ValueError(f"Missing config keys: {', '.join(missing_keys)}")
 
-    augmentation = config["augmentation"]
-    if augmentation not in SUPPORTED_AUGMENTATIONS:
-        raise ValueError(
-            f"Unsupported augmentation '{augmentation}'. "
-            f"Choose from: {', '.join(sorted(SUPPORTED_AUGMENTATIONS))}"
-        )
-
     return config
 
 
@@ -85,30 +69,6 @@ def create_run_dir(experiment_name):
     (run_dir / "sample").mkdir(parents=True, exist_ok=True)
     (run_dir / "source_code").mkdir(parents=True, exist_ok=True)
     return run_dir
-
-
-def build_transform(config):
-    transform_steps = [
-        transforms.Resize((config["image_size"], config["image_size"])),
-    ]
-
-    augmentation = config["augmentation"]
-    if augmentation == "flip":
-        transform_steps.append(transforms.RandomHorizontalFlip(p=1.0))
-    elif augmentation == "brightness":
-        transform_steps.append(transforms.ColorJitter(brightness=0.2))
-    elif augmentation == "contrast":
-        transform_steps.append(transforms.ColorJitter(contrast=0.2))
-    elif augmentation == "blur":
-        transform_steps.append(transforms.GaussianBlur(kernel_size=3))
-    elif augmentation == "sharpen":
-        transform_steps.append(transforms.RandomAdjustSharpness(sharpness_factor=1.5, p=1.0))
-
-    transform_steps.extend([
-        transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-    ])
-    return transforms.Compose(transform_steps)
 
 
 def log_message(message, log_fp):
@@ -161,7 +121,7 @@ def save_environment(run_dir, device):
 
 def save_source_code(run_dir):
     source_dir = run_dir / "source_code"
-    source_files = ["train.py", "main.py", "model64.py", "create_dataset.py"]
+    source_files = ["train.py", "augmentation.py", "main.py", "model64.py", "create_dataset.py"]
     if Generator.__module__ == "model512":
         source_files.append("model512.py")
 
@@ -300,7 +260,11 @@ def train(config, config_path):
     run_dir = create_run_dir(config["experiment_name"])
     save_config_used(run_dir, config_path)
 
-    transform = build_transform(config)
+    IMAGE_SIZE = config["image_size"]
+    transform = get_transform(
+        IMAGE_SIZE,
+        config["augmentation"]
+    )
     dataset = My_dataset(config["dataset_path"], transform=transform)   # 数据集位置
     batch_size, epochs = config["batch_size"], config["epochs"]
     my_dataloader = DataLoader(
