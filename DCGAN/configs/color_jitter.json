@@ -1,0 +1,14 @@
+{
+    "experiment_name": "color_jitter",
+    "image_size": 64,
+    "batch_size": 16,
+    "epochs": 500,
+    "noise_dim": 100,
+    "g_lr": 0.0002,
+    "d_lr": 0.00005,
+    "beta1": 0.5,
+    "beta2": 0.99,
+    "dataset_path": "/content/drive/MyDrive/alibaba/dataset",
+    "num_workers": 16,
+    "augmentation": "color_jitter"
+}
