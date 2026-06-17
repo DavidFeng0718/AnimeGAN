@@ -4,18 +4,18 @@ from torchvision import transforms
 from create_dataset import My_dataset, save_img
 from torch.utils.data import DataLoader
 # from model512 import Generator, Discriminator
-from model512 import Generator, Discriminator
+from model64 import Generator, Discriminator
 
 # 图像变换
 transform = transforms.Compose([
-    transforms.Resize((512, 512)),  # 网络设置图片大小为 512*512
+    transforms.Resize((64, 64)),  # 网络设置图片大小为 512*512
     transforms.ToTensor(),
     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
 ])
 
 
-dataset = My_dataset(r'/Users/fengyanlin/alibaba/AnimeGAN/AnimeGAN/dataset', transform=transform)   # 数据集位置
-batch_size, epochs = 128, 500
+dataset = My_dataset(r'/content/drive/MyDrive/alibaba/dataset', transform=transform)   # 数据集位置
+batch_size, epochs = 16, 500
 my_dataloader = DataLoader(
     dataset=dataset,
     batch_size=batch_size,
@@ -41,8 +41,8 @@ generator = Generator().to(device)
 
 
 
-d_optimizer = torch.optim.Adam(discriminator.parameters(), betas=(0.5, 0.99), lr=1e-4)  # betas为adam算法两个动量参数
-g_optimizer = torch.optim.Adam(generator.parameters(), betas=(0.5, 0.99), lr=1e-4)
+d_optimizer = torch.optim.Adam(discriminator.parameters(), betas=(0.5, 0.99), lr=5e-5)  # betas为adam算法两个动量参数
+g_optimizer = torch.optim.Adam(generator.parameters(), betas=(0.5, 0.99), lr=2e-4)
 criterion = nn.BCEWithLogitsLoss()
 
 for epoch in range(epochs):
@@ -53,7 +53,11 @@ for epoch in range(epochs):
         real_img = img.to(device)
         fake_img = generator(noise).detach()
 
-        real_label = torch.ones(batch_size).to(device)
+        real_label = real_label = torch.full(
+            (batch_size,),
+            0.9,
+            device=device
+            )
         fake_label = torch.zeros(batch_size).to(device)
         real_out = discriminator(real_img)
         fake_out = discriminator(fake_img)
@@ -67,7 +71,7 @@ for epoch in range(epochs):
         d_optimizer.step()
 
         noise = torch.randn(batch_size, 100, 1, 1).to(device)
-        fake_img = generator(noise).detach()
+        fake_img = generator(noise)
         output = discriminator(fake_img)
 
         g_loss = criterion(output, real_label)
@@ -84,7 +88,7 @@ for epoch in range(epochs):
             ))
         if epoch == 0 and i == len(my_dataloader) - 1:          # 保存真实图像
             save_img(img[:64, :, :, :], './sample/real_images.png')
-        if (epoch+1) % 50 == 0 and i == len(my_dataloader)-1:             # 每50个epoch保存一次预测图像
+        if (epoch+1) % 10 == 0 and i == len(my_dataloader)-1:             # 每10个epoch保存一次预测图像
             save_img(fake_img[:64, :, :, :], './sample/fake_images_{}.png'.format(epoch + 1))
 
 torch.save(generator.state_dict(), './generator.pth')        # 保存权重文件
