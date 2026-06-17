@@ -1,32 +1,43 @@
-import os
-import numpy as np
 import torch
+from pathlib import Path
 from PIL import Image
 from torchvision.utils import make_grid
 import torch.utils.data.dataset as Dataset
+
+
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
 class My_dataset(Dataset.Dataset):
 
     def __init__(self, path, transform):
 
-        self.path = path
-        loc_list = os.listdir(self.path)
-        self.loc_list = loc_list
-        self.tranform = transform
+        self.path = Path(path)
+        if not self.path.exists():
+            raise FileNotFoundError(f"Dataset path does not exist: {self.path}")
+        if not self.path.is_dir():
+            raise NotADirectoryError(f"Dataset path is not a directory: {self.path}")
+
+        self.image_paths = sorted(
+            item for item in self.path.iterdir()
+            if item.is_file() and item.suffix.lower() in IMAGE_EXTS
+        )
+        if not self.image_paths:
+            raise ValueError(f"No supported images found in dataset path: {self.path}")
+
+        self.transform = transform
 
     def __getitem__(self, index):
 
-        loc_data = os.path.join(self.path, self.loc_list[index])
-        data = Image.open(loc_data)
-        data = np.array(data)
-        data = Image.fromarray(data)  # 若导入图像不为PIL格式则需要转换
-        data = self.tranform(data)
+        loc_data = self.image_paths[index]
+        with Image.open(loc_data) as image:
+            data = image.convert("RGB")
+        data = self.transform(data)
         return data
 
     def __len__(self):
 
-        return len(self.loc_list)
+        return len(self.image_paths)
 
 
 def save_img(tensor, fp):

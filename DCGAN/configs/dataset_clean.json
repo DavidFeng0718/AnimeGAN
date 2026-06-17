@@ -8,8 +8,9 @@
     "d_lr": 0.00005,
     "beta1": 0.5,
     "beta2": 0.99,
-    "dataset_path": "/content/drive/MyDrive/alibaba/dataset",
+    "dataset_path": "dataset_cleaned",
     "num_workers": 16,
+    "seed": 42,
     "augmentation": "none",
     "dataset_version": "clean"
 }

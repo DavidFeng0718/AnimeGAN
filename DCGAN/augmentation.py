@@ -35,7 +35,7 @@ def get_transform(image_size, augmentation):
     ]
 
     if augmentation == "flip":
-        transform_steps.append(transforms.RandomHorizontalFlip(p=1.0))
+        transform_steps.append(transforms.RandomHorizontalFlip(p=0.5))
     elif augmentation == "brightness":
         transform_steps.append(transforms.ColorJitter(brightness=0.2))
     elif augmentation == "contrast":

@@ -2,6 +2,7 @@ import argparse
 import csv
 import json
 import platform
+import random
 import shutil
 import subprocess
 import time
@@ -15,8 +16,8 @@ from torch.utils.data import DataLoader
 
 from augmentation import get_transform
 from create_dataset import My_dataset, save_img
-# from model512 import Generator, Discriminator
-from model64 import Generator, Discriminator
+from model64 import Generator as Generator64, Discriminator as Discriminator64
+from model512 import Generator as Generator512, Discriminator as Discriminator512
 
 
 REQUIRED_CONFIG_KEYS = [
@@ -35,6 +36,10 @@ REQUIRED_CONFIG_KEYS = [
 ]
 
 PROJECT_DIR = Path(__file__).resolve().parent
+MODEL_REGISTRY = {
+    64: (Generator64, Discriminator64, "model64.py"),
+    512: (Generator512, Discriminator512, "model512.py"),
+}
 
 
 def parse_args():
@@ -52,7 +57,35 @@ def load_config(config_path):
     if missing_keys:
         raise ValueError(f"Missing config keys: {', '.join(missing_keys)}")
 
+    validate_config(config)
     return config
+
+
+def validate_config(config):
+    image_size = config["image_size"]
+    if image_size not in MODEL_REGISTRY:
+        supported_sizes = ", ".join(str(size) for size in sorted(MODEL_REGISTRY))
+        raise ValueError(f"Unsupported image_size {image_size}. Supported sizes: {supported_sizes}")
+
+    int_keys = ["image_size", "batch_size", "epochs", "noise_dim", "num_workers"]
+    for key in int_keys:
+        if not isinstance(config[key], int) or config[key] <= 0:
+            raise ValueError(f"Config '{key}' must be a positive integer.")
+
+    float_keys = ["g_lr", "d_lr", "beta1", "beta2"]
+    for key in float_keys:
+        if not isinstance(config[key], (int, float)):
+            raise ValueError(f"Config '{key}' must be numeric.")
+
+    if not 0 <= config["beta1"] < 1 or not 0 <= config["beta2"] < 1:
+        raise ValueError("Adam beta1 and beta2 must be in [0, 1).")
+
+    if "seed" in config and (not isinstance(config["seed"], int) or config["seed"] < 0):
+        raise ValueError("Config 'seed' must be a non-negative integer.")
+
+
+def get_model_classes(image_size):
+    return MODEL_REGISTRY[image_size]
 
 
 def create_run_dir(experiment_name):
@@ -82,13 +115,14 @@ def save_json(path, data):
         json.dump(data, fp, indent=4)
 
 
-def save_config(run_dir, config, dataset_size, config_path):
+def save_config(run_dir, config, dataset_size, config_path, model_file):
     config_to_save = dict(config)
     config_to_save.update({
         "optimizer": "Adam",
         "loss": "BCEWithLogitsLoss",
         "dataset_size": dataset_size,
         "config_file": str(config_path),
+        "model_file": model_file,
     })
     save_json(run_dir / "config.json", config_to_save)
 
@@ -119,11 +153,9 @@ def save_environment(run_dir, device):
         fp.write("\n".join(environment) + "\n")
 
 
-def save_source_code(run_dir):
+def save_source_code(run_dir, model_file):
     source_dir = run_dir / "source_code"
-    source_files = ["train.py", "augmentation.py", "main.py", "model64.py", "create_dataset.py"]
-    if Generator.__module__ == "model512":
-        source_files.append("model512.py")
+    source_files = ["train.py", "augmentation.py", "main.py", "create_dataset.py", model_file]
 
     for source_file in source_files:
         source_path = PROJECT_DIR / source_file
@@ -256,31 +288,54 @@ def get_device():
     return torch.device("cpu")
 
 
-def train(config, config_path):
-    run_dir = create_run_dir(config["experiment_name"])
-    save_config_used(run_dir, config_path)
+def set_seed(seed):
+    random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
+
+def train(config, config_path):
+    seed = config.get("seed")
+    if seed is not None:
+        set_seed(seed)
+
+    device = get_device()
     IMAGE_SIZE = config["image_size"]
+    Generator, Discriminator, model_file = get_model_classes(IMAGE_SIZE)
     transform = get_transform(
         IMAGE_SIZE,
         config["augmentation"]
     )
     dataset = My_dataset(config["dataset_path"], transform=transform)   # 数据集位置
     batch_size, epochs = config["batch_size"], config["epochs"]
+    if len(dataset) < batch_size:
+        raise ValueError(
+            f"Dataset has {len(dataset)} images, which is smaller than batch_size={batch_size} "
+            "while drop_last=True."
+        )
+
+    dataloader_generator = None
+    if seed is not None:
+        dataloader_generator = torch.Generator()
+        dataloader_generator.manual_seed(seed)
+
     my_dataloader = DataLoader(
         dataset=dataset,
         batch_size=batch_size,
         shuffle=True,
         drop_last=True,
         num_workers=config["num_workers"], # A100情况，其余改4
-        pin_memory=True,
-        persistent_workers=config["num_workers"] > 0
+        pin_memory=device.type == "cuda",
+        persistent_workers=config["num_workers"] > 0,
+        generator=dataloader_generator
     )
 
-    device = get_device()
+    run_dir = create_run_dir(config["experiment_name"])
+    save_config_used(run_dir, config_path)
 
     discriminator = Discriminator().to(device)
-    generator = Generator().to(device)
+    generator = Generator(noise_dim=config["noise_dim"]).to(device)
 
     d_optimizer = torch.optim.Adam(
         discriminator.parameters(),
@@ -294,9 +349,9 @@ def train(config, config_path):
     )
     criterion = nn.BCEWithLogitsLoss()
 
-    save_config(run_dir, config, len(dataset), config_path)
+    save_config(run_dir, config, len(dataset), config_path, model_file)
     save_environment(run_dir, device)
-    save_source_code(run_dir)
+    save_source_code(run_dir, model_file)
     save_git_commit(run_dir)
     save_model_architecture(run_dir, generator, discriminator)
 
@@ -336,7 +391,7 @@ def train(config, config_path):
                 real_img = img.to(device)
                 fake_img = generator(noise).detach()
 
-                real_label = real_label = torch.full(
+                real_label = torch.full(
                     (batch_size,),
                     0.9,
                     device=device
@@ -365,8 +420,8 @@ def train(config, config_path):
 
                 d_loss_value = d_loss.data.item()
                 g_loss_value = g_loss.data.item()
-                d_real_value = real_out.data.mean().item()
-                d_fake_value = fake_out.data.mean().item()
+                d_real_value = torch.sigmoid(real_out.detach()).mean().item()
+                d_fake_value = torch.sigmoid(fake_out.detach()).mean().item()
                 d_gap_value = d_real_value - d_fake_value
 
                 row = {
@@ -391,7 +446,7 @@ def train(config, config_path):
                     log_message('Epoch[{}/{}],d_loss:{:.6f},g_loss:{:.6f} '
                                 'D_real: {:.6f},D_fake: {:.6f}'.format(
                         epoch, epochs, d_loss_value, g_loss_value,
-                        d_real_value, d_fake_value  # 打印的是真实图片的损失均值
+                        d_real_value, d_fake_value
                     ), log_fp)
                 if epoch == 0 and i == len(my_dataloader) - 1:          # 保存真实图像
                     save_img(img[:64, :, :, :], run_dir / "sample" / "real_images.png")
