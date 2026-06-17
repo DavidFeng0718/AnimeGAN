@@ -83,7 +83,14 @@ def validate_config(config):
     if "seed" in config and (not isinstance(config["seed"], int) or config["seed"] < 0):
         raise ValueError("Config 'seed' must be a non-negative integer.")
 
-    for key in ["g_steps", "d_train_every", "instance_noise_decay_epochs"]:
+    for key in [
+        "g_steps",
+        "d_train_every",
+        "instance_noise_decay_epochs",
+        "checkpoint_interval",
+        "sample_interval",
+        "sample_count",
+    ]:
         if key in config and (not isinstance(config[key], int) or config[key] <= 0):
             raise ValueError(f"Config '{key}' must be a positive integer.")
 
@@ -327,6 +334,63 @@ def add_instance_noise(images, std):
     return torch.clamp(images + torch.randn_like(images) * std, -1.0, 1.0)
 
 
+def init_dcgan_weights(module):
+    classname = module.__class__.__name__
+    if classname.find("Conv") != -1:
+        nn.init.normal_(module.weight.data, 0.0, 0.02)
+        if getattr(module, "bias", None) is not None:
+            nn.init.constant_(module.bias.data, 0.0)
+    elif classname.find("BatchNorm") != -1:
+        nn.init.normal_(module.weight.data, 1.0, 0.02)
+        nn.init.constant_(module.bias.data, 0.0)
+    elif classname.find("Linear") != -1:
+        nn.init.normal_(module.weight.data, 0.0, 0.02)
+        if getattr(module, "bias", None) is not None:
+            nn.init.constant_(module.bias.data, 0.0)
+
+
+def generate_samples(generator, fixed_noise):
+    was_training = generator.training
+    generator.eval()
+    with torch.no_grad():
+        samples = generator(fixed_noise).detach()
+    if was_training:
+        generator.train()
+    return samples
+
+
+def save_checkpoint(
+    checkpoint_dir,
+    epoch,
+    generator,
+    discriminator,
+    g_optimizer,
+    d_optimizer,
+    epoch_row,
+    config,
+):
+    epoch_number = epoch + 1
+    generator_path = checkpoint_dir / f"generator_epoch_{epoch_number}.pth"
+    discriminator_path = checkpoint_dir / f"discriminator_epoch_{epoch_number}.pth"
+    state_path = checkpoint_dir / f"checkpoint_epoch_{epoch_number}.pt"
+
+    torch.save(generator.state_dict(), generator_path)
+    torch.save(discriminator.state_dict(), discriminator_path)
+    torch.save(
+        {
+            "epoch": epoch,
+            "epoch_number": epoch_number,
+            "generator_state_dict": generator.state_dict(),
+            "discriminator_state_dict": discriminator.state_dict(),
+            "g_optimizer_state_dict": g_optimizer.state_dict(),
+            "d_optimizer_state_dict": d_optimizer.state_dict(),
+            "epoch_metrics": epoch_row,
+            "config": config,
+        },
+        state_path,
+    )
+
+
 def train(config, config_path):
     seed = config.get("seed")
     if seed is not None:
@@ -368,6 +432,8 @@ def train(config, config_path):
 
     discriminator = Discriminator().to(device)
     generator = Generator(noise_dim=config["noise_dim"]).to(device)
+    generator.apply(init_dcgan_weights)
+    discriminator.apply(init_dcgan_weights)
 
     d_optimizer = torch.optim.Adam(
         discriminator.parameters(),
@@ -384,6 +450,10 @@ def train(config, config_path):
     fake_label_value = config.get("fake_label", 0.1)
     g_steps = config.get("g_steps", 1)
     d_train_every = config.get("d_train_every", 1)
+    checkpoint_interval = config.get("checkpoint_interval", 50)
+    sample_interval = config.get("sample_interval", 10)
+    sample_count = config.get("sample_count", 64)
+    fixed_noise = torch.randn(sample_count, config["noise_dim"], 1, 1).to(device)
 
     save_config(run_dir, config, len(dataset), config_path, model_file)
     save_environment(run_dir, device)
@@ -394,6 +464,7 @@ def train(config, config_path):
     metrics_path = run_dir / "metrics.csv"
     epoch_metrics_path = run_dir / "epoch_metrics.csv"
     train_log_path = run_dir / "train.log"
+    checkpoint_dir = run_dir / "checkpoints"
 
     epoch_metrics = []
     start_time = time.time()
@@ -493,8 +564,9 @@ def train(config, config_path):
                     ), log_fp)
                 if epoch == 0 and i == len(my_dataloader) - 1:          # 保存真实图像
                     save_img(img[:64, :, :, :], run_dir / "sample" / "real_images.png")
-                if (epoch+1) % 10 == 0 and i == len(my_dataloader)-1:             # 每10个epoch保存一次预测图像
-                    save_img(fake_img[:64, :, :, :], run_dir / "sample" / "fake_images_{}.png".format(epoch + 1))
+                if (epoch + 1) % sample_interval == 0 and i == len(my_dataloader) - 1:
+                    samples = generate_samples(generator, fixed_noise)
+                    save_img(samples, run_dir / "sample" / "fake_images_{}.png".format(epoch + 1))
 
             if epoch_rows:
                 avg_d_loss = sum(row["d_loss"] for row in epoch_rows) / len(epoch_rows)
@@ -514,7 +586,18 @@ def train(config, config_path):
                 epoch_metrics_fp.flush()
                 epoch_metrics.append(epoch_row)
 
-    checkpoint_dir = run_dir / "checkpoints"
+                if (epoch + 1) % checkpoint_interval == 0:
+                    save_checkpoint(
+                        checkpoint_dir,
+                        epoch,
+                        generator,
+                        discriminator,
+                        g_optimizer,
+                        d_optimizer,
+                        epoch_row,
+                        config,
+                    )
+
     torch.save(generator.state_dict(), checkpoint_dir / "generator.pth")        # 保存权重文件
     torch.save(discriminator.state_dict(), checkpoint_dir / "discriminator.pth")
     torch.save(generator.state_dict(), checkpoint_dir / "generator_final.pth")
