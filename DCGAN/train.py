@@ -16,6 +16,7 @@ from torch.utils.data import DataLoader
 
 from augmentation import get_transform
 from create_dataset import My_dataset, save_img
+from evaluate_samples import DEFAULT_EPOCHS, evaluate_run_samples
 from model64 import Generator as Generator64, Discriminator as Discriminator64
 from model512 import Generator as Generator512, Discriminator as Discriminator512
 
@@ -106,6 +107,15 @@ def validate_config(config):
     if config.get("instance_noise_std", 0.0) < 0:
         raise ValueError("Config 'instance_noise_std' must be non-negative.")
 
+    if "evaluation_epochs" in config:
+        evaluation_epochs = config["evaluation_epochs"]
+        if (
+            not isinstance(evaluation_epochs, list)
+            or not evaluation_epochs
+            or any(not isinstance(epoch, int) or epoch <= 0 for epoch in evaluation_epochs)
+        ):
+            raise ValueError("Config 'evaluation_epochs' must be a non-empty list of positive integers.")
+
 
 def get_model_classes(image_size):
     return MODEL_REGISTRY[image_size]
@@ -178,7 +188,7 @@ def save_environment(run_dir, device):
 
 def save_source_code(run_dir, model_file):
     source_dir = run_dir / "source_code"
-    source_files = ["train.py", "augmentation.py", "main.py", "create_dataset.py", model_file]
+    source_files = ["train.py", "augmentation.py", "main.py", "create_dataset.py", "evaluate_samples.py", model_file]
 
     for source_file in source_files:
         source_path = PROJECT_DIR / source_file
@@ -357,6 +367,17 @@ def generate_samples(generator, fixed_noise):
     if was_training:
         generator.train()
     return samples
+
+
+def get_evaluation_epochs(config, total_epochs, sample_interval):
+    configured_epochs = config.get("evaluation_epochs")
+    if configured_epochs:
+        epochs = configured_epochs
+    else:
+        epochs = [epoch for epoch in DEFAULT_EPOCHS if epoch <= total_epochs]
+        if total_epochs % sample_interval == 0:
+            epochs.append(total_epochs)
+    return sorted(set(epoch for epoch in epochs if epoch <= total_epochs))
 
 
 def save_checkpoint(
@@ -605,6 +626,28 @@ def train(config, config_path):
 
     plot_training_curves(run_dir, epoch_metrics)
 
+    sample_metrics_path = None
+    sample_metrics_rows = 0
+    sample_metrics_missing = 0
+    sample_metrics_error = None
+    evaluation_epochs = get_evaluation_epochs(config, epochs, sample_interval)
+    if evaluation_epochs:
+        try:
+            rows, missing, output_path = evaluate_run_samples(
+                run_dir=run_dir,
+                epochs=evaluation_epochs,
+                output_path=run_dir / "sample_quality_metrics.csv",
+            )
+            sample_metrics_path = str(output_path)
+            sample_metrics_rows = len(rows)
+            sample_metrics_missing = len(missing)
+            print(f"Sample quality metrics saved to {output_path}")
+            if missing:
+                print(f"Skipped {len(missing)} missing sample grids during evaluation.")
+        except Exception as exc:
+            sample_metrics_error = str(exc)
+            print(f"Sample quality evaluation failed: {sample_metrics_error}")
+
     summary = {
         "experiment_name": config["experiment_name"],
         "augmentation": config["augmentation"],
@@ -616,6 +659,10 @@ def train(config, config_path):
         "final_g_loss": final_g_loss,
         "best_d_loss": best_d_loss,
         "best_g_loss": best_g_loss,
+        "sample_quality_metrics": sample_metrics_path,
+        "sample_quality_metrics_rows": sample_metrics_rows,
+        "sample_quality_metrics_missing": sample_metrics_missing,
+        "sample_quality_metrics_error": sample_metrics_error,
     }
     save_json(run_dir / "summary.json", summary)
     return run_dir

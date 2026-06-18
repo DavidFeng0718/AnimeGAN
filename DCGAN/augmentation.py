@@ -18,43 +18,64 @@ SUPPORTED_AUGMENTATIONS = {
 }
 
 
+def parse_augmentations(augmentation):
+    if isinstance(augmentation, str):
+        names = [name.strip() for name in augmentation.split("+") if name.strip()]
+    elif isinstance(augmentation, (list, tuple)):
+        names = list(augmentation)
+    else:
+        raise TypeError("augmentation must be a string or a list/tuple of strings.")
+
+    if not names:
+        names = ["none"]
+    if "none" in names and len(names) > 1:
+        raise ValueError("'none' cannot be combined with other augmentations.")
+
+    unsupported = [name for name in names if name not in SUPPORTED_AUGMENTATIONS]
+    if unsupported:
+        raise ValueError(
+            f"Unsupported augmentation(s): {', '.join(unsupported)}. "
+            f"Choose from: {', '.join(sorted(SUPPORTED_AUGMENTATIONS))}"
+        )
+    return names
+
+
 def add_gaussian_noise(tensor, sigma=0.02):
     noise = torch.randn_like(tensor) * sigma
     return torch.clamp(tensor + noise, 0.0, 1.0)
 
 
 def get_transform(image_size, augmentation):
-    if augmentation not in SUPPORTED_AUGMENTATIONS:
-        raise ValueError(
-            f"Unsupported augmentation '{augmentation}'. "
-            f"Choose from: {', '.join(sorted(SUPPORTED_AUGMENTATIONS))}"
-        )
+    augmentations = parse_augmentations(augmentation)
 
     transform_steps = [
         transforms.Resize((image_size, image_size)),
     ]
 
-    if augmentation == "flip":
-        transform_steps.append(transforms.RandomHorizontalFlip(p=0.5))
-    elif augmentation == "brightness":
-        transform_steps.append(transforms.ColorJitter(brightness=0.2))
-    elif augmentation == "contrast":
-        transform_steps.append(transforms.ColorJitter(contrast=0.2))
-    elif augmentation == "blur":
-        transform_steps.append(transforms.GaussianBlur(kernel_size=3))
-    elif augmentation == "sharpen":
-        transform_steps.append(transforms.Lambda(lambda image: image.filter(ImageFilter.SHARPEN)))
-    elif augmentation == "noise_filter":
-        transform_steps.append(transforms.Lambda(lambda image: image.filter(ImageFilter.MedianFilter(size=3))))
-    elif augmentation == "auto_contrast":
-        transform_steps.append(transforms.Lambda(lambda image: ImageOps.autocontrast(image)))
-    elif augmentation == "rotation":
-        transform_steps.append(transforms.RandomRotation(10))
-    elif augmentation == "color_jitter":
-        transform_steps.append(transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2))
+    for name in augmentations:
+        if name == "none":
+            continue
+        if name == "flip":
+            transform_steps.append(transforms.RandomHorizontalFlip(p=0.5))
+        elif name == "brightness":
+            transform_steps.append(transforms.ColorJitter(brightness=0.2))
+        elif name == "contrast":
+            transform_steps.append(transforms.ColorJitter(contrast=0.2))
+        elif name == "blur":
+            transform_steps.append(transforms.GaussianBlur(kernel_size=3))
+        elif name == "sharpen":
+            transform_steps.append(transforms.Lambda(lambda image: image.filter(ImageFilter.SHARPEN)))
+        elif name == "noise_filter":
+            transform_steps.append(transforms.Lambda(lambda image: image.filter(ImageFilter.MedianFilter(size=3))))
+        elif name == "auto_contrast":
+            transform_steps.append(transforms.Lambda(lambda image: ImageOps.autocontrast(image)))
+        elif name == "rotation":
+            transform_steps.append(transforms.RandomRotation(10))
+        elif name == "color_jitter":
+            transform_steps.append(transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2))
 
     transform_steps.append(transforms.ToTensor())
-    if augmentation == "gaussian_noise":
+    if "gaussian_noise" in augmentations:
         transform_steps.append(transforms.Lambda(lambda tensor: add_gaussian_noise(tensor, sigma=0.02)))
     transform_steps.append(transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)))
     return transforms.Compose(transform_steps)
