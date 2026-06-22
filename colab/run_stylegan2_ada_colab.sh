@@ -7,7 +7,7 @@ WORK_ROOT="${WORK_ROOT:-/content/stylegan2_ada_colab}"
 BUNDLE_DIR_NAME="stylegan2_ada_colab_bundle_20260622_151128"
 PROJECT_DIR="$WORK_ROOT/$BUNDLE_DIR_NAME/StyleGAN2-ADA"
 CONFIG="${CONFIG:-configs/baseline.json}"
-AUGPIPE="${AUGPIPE:-color}"
+AUGPIPE="${AUGPIPE:-}"
 
 if [[ ! -f "$ZIP_PATH" ]]; then
   echo "Package not found: $ZIP_PATH" >&2
@@ -47,7 +47,7 @@ else:
     raise SystemExit("CUDA is not available. In Colab, set Runtime > Change runtime type > GPU.")
 PY
 
-RUN_CONFIG="/content/stylegan2_ada_colab_config.json"
+RUN_CONFIG="$CONFIG"
 if [[ -n "${KIMG:-}" || -n "${BATCH:-}" || -n "${SNAP:-}" || -n "${AUGPIPE:-}" ]]; then
   RUN_CONFIG="/content/stylegan2_ada_colab_config.json"
   python - <<PY
