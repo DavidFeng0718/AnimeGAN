@@ -7,6 +7,7 @@ WORK_ROOT="${WORK_ROOT:-/content/stylegan2_ada_colab}"
 BUNDLE_DIR_NAME="stylegan2_ada_colab_bundle_20260622_151128"
 PROJECT_DIR="$WORK_ROOT/$BUNDLE_DIR_NAME/StyleGAN2-ADA"
 CONFIG="${CONFIG:-configs/baseline.json}"
+AUGPIPE="${AUGPIPE:-color}"
 
 if [[ ! -f "$ZIP_PATH" ]]; then
   echo "Package not found: $ZIP_PATH" >&2
@@ -46,8 +47,8 @@ else:
     raise SystemExit("CUDA is not available. In Colab, set Runtime > Change runtime type > GPU.")
 PY
 
-RUN_CONFIG="$CONFIG"
-if [[ -n "${KIMG:-}" || -n "${BATCH:-}" || -n "${SNAP:-}" ]]; then
+RUN_CONFIG="/content/stylegan2_ada_colab_config.json"
+if [[ -n "${KIMG:-}" || -n "${BATCH:-}" || -n "${SNAP:-}" || -n "${AUGPIPE:-}" ]]; then
   RUN_CONFIG="/content/stylegan2_ada_colab_config.json"
   python - <<PY
 import json
@@ -58,12 +59,15 @@ cfg = json.loads(src.read_text())
 kimg = "${KIMG:-}"
 batch = "${BATCH:-}"
 snap = "${SNAP:-}"
+augpipe = "${AUGPIPE:-}"
 if kimg:
     cfg["kimg"] = int(kimg)
 if batch:
     cfg["batch_size"] = int(batch)
 if snap:
     cfg["snap"] = int(snap)
+if augpipe:
+    cfg["augpipe"] = augpipe
 Path("$RUN_CONFIG").write_text(json.dumps(cfg, indent=2))
 print("Wrote runtime config:", "$RUN_CONFIG")
 PY
