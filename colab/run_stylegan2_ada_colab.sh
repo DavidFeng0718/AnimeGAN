@@ -28,6 +28,10 @@ PY
 
 cd "$PROJECT_DIR"
 
+if [[ -f "$PROJECT_DIR/datasets/animegan_64.zip" ]]; then
+  export STYLEGAN_DATASET_PATH="$PROJECT_DIR/datasets/animegan_64.zip"
+fi
+
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 
