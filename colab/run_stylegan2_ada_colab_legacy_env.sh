@@ -59,6 +59,8 @@ if ! "$MAMBA_BIN" env list | awk '{print $1}' | grep -qx "$ENV_NAME"; then
     click numpy=1.23 pillow psutil requests scipy tensorboard tqdm ninja
 fi
 
+"$MAMBA_BIN" run -n "$ENV_NAME" python -m pip install "setuptools==59.5.0"
+
 "$MAMBA_BIN" run -n "$ENV_NAME" python -m pip install \
   --extra-index-url "$PYTORCH_CUDA_WHEEL_INDEX" \
   "torch==$TORCH_VERSION" \
