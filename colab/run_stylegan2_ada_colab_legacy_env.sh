@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ZIP_PATH="${1:-"$SCRIPT_DIR/stylegan2_ada_colab_bundle.zip"}"
+WORK_ROOT="${WORK_ROOT:-/content/stylegan2_ada_colab}"
+BUNDLE_DIR_NAME="stylegan2_ada_colab_bundle_20260622_151128"
+PROJECT_DIR="$WORK_ROOT/$BUNDLE_DIR_NAME/StyleGAN2-ADA"
+CONFIG="${CONFIG:-configs/baseline.json}"
+AUGPIPE="${AUGPIPE:-color}"
+ENV_NAME="${ENV_NAME:-stylegan2ada-py38}"
+MAMBA_ROOT_PREFIX="${MAMBA_ROOT_PREFIX:-/content/micromamba}"
+MAMBA_BIN="$MAMBA_ROOT_PREFIX/bin/micromamba"
+
+if [[ ! -f "$ZIP_PATH" ]]; then
+  echo "Package not found: $ZIP_PATH" >&2
+  echo "Usage: bash $(basename "$0") /path/to/stylegan2_ada_colab_bundle.zip" >&2
+  exit 1
+fi
+
+mkdir -p "$WORK_ROOT"
+python3 - <<PY
+import pathlib
+import zipfile
+
+zip_path = pathlib.Path("$ZIP_PATH")
+work_root = pathlib.Path("$WORK_ROOT")
+with zipfile.ZipFile(zip_path, "r") as zf:
+    zf.extractall(work_root)
+print(f"Extracted {zip_path} to {work_root}")
+PY
+
+if [[ ! -x "$MAMBA_BIN" ]]; then
+  mkdir -p "$MAMBA_ROOT_PREFIX"
+  curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xj -C "$MAMBA_ROOT_PREFIX" bin/micromamba
+fi
+
+if ! "$MAMBA_BIN" env list | awk '{print $1}' | grep -qx "$ENV_NAME"; then
+  "$MAMBA_BIN" create -y -n "$ENV_NAME" \
+    -c pytorch -c nvidia -c conda-forge \
+    python=3.8 \
+    pytorch=1.9.1 torchvision=0.10.1 cudatoolkit=11.1 \
+    click numpy pillow psutil requests scipy tensorboard tqdm ninja
+fi
+
+"$MAMBA_BIN" run -n "$ENV_NAME" python -m pip install pyspng imageio-ffmpeg==0.4.3
+
+cd "$PROJECT_DIR"
+
+if [[ -f "$PROJECT_DIR/datasets/animegan_64.zip" ]]; then
+  export STYLEGAN_DATASET_PATH="$PROJECT_DIR/datasets/animegan_64.zip"
+fi
+
+"$MAMBA_BIN" run -n "$ENV_NAME" python - <<'PY'
+import torch
+
+print("python/torch env OK")
+print("torch:", torch.__version__)
+print("cuda available:", torch.cuda.is_available())
+if torch.cuda.is_available():
+    print("cuda device:", torch.cuda.get_device_name(0))
+else:
+    raise SystemExit("CUDA is not available. In Colab, set Runtime > Change runtime type > GPU.")
+PY
+
+RUN_CONFIG="/content/stylegan2_ada_colab_config.json"
+"$MAMBA_BIN" run -n "$ENV_NAME" python - <<PY
+import json
+from pathlib import Path
+
+src = Path("$CONFIG")
+cfg = json.loads(src.read_text())
+kimg = "${KIMG:-}"
+batch = "${BATCH:-}"
+snap = "${SNAP:-}"
+augpipe = "${AUGPIPE:-}"
+if kimg:
+    cfg["kimg"] = int(kimg)
+if batch:
+    cfg["batch_size"] = int(batch)
+if snap:
+    cfg["snap"] = int(snap)
+if augpipe:
+    cfg["augpipe"] = augpipe
+Path("$RUN_CONFIG").write_text(json.dumps(cfg, indent=2))
+print("Wrote runtime config:", "$RUN_CONFIG")
+PY
+
+STYLEGAN_DEVICE=cuda "$MAMBA_BIN" run -n "$ENV_NAME" python train.py --config "$RUN_CONFIG"
