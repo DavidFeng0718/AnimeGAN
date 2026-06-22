@@ -11,6 +11,9 @@ AUGPIPE="${AUGPIPE:-color}"
 ENV_NAME="${ENV_NAME:-stylegan2ada-py38}"
 MAMBA_ROOT_PREFIX="${MAMBA_ROOT_PREFIX:-/content/micromamba}"
 MAMBA_BIN="$MAMBA_ROOT_PREFIX/bin/micromamba"
+PYTORCH_CUDA_WHEEL_INDEX="${PYTORCH_CUDA_WHEEL_INDEX:-https://download.pytorch.org/whl/cu113}"
+TORCH_VERSION="${TORCH_VERSION:-1.10.2+cu113}"
+TORCHVISION_VERSION="${TORCHVISION_VERSION:-0.11.3+cu113}"
 
 if [[ ! -f "$ZIP_PATH" ]]; then
   echo "Package not found: $ZIP_PATH" >&2
@@ -35,13 +38,31 @@ if [[ ! -x "$MAMBA_BIN" ]]; then
   curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xj -C "$MAMBA_ROOT_PREFIX" bin/micromamba
 fi
 
+if "$MAMBA_BIN" env list | awk '{print $1}' | grep -qx "$ENV_NAME"; then
+  if ! "$MAMBA_BIN" run -n "$ENV_NAME" python - <<'PY'
+try:
+    import torch
+except Exception:
+    raise SystemExit(1)
+raise SystemExit(0 if torch.cuda.is_available() else 1)
+PY
+  then
+    echo "Existing $ENV_NAME environment has no CUDA PyTorch; recreating it."
+    "$MAMBA_BIN" env remove -y -n "$ENV_NAME"
+  fi
+fi
+
 if ! "$MAMBA_BIN" env list | awk '{print $1}' | grep -qx "$ENV_NAME"; then
   "$MAMBA_BIN" create -y -n "$ENV_NAME" \
-    -c pytorch -c nvidia -c conda-forge \
+    -c conda-forge \
     python=3.8 \
-    pytorch=1.9.1 torchvision=0.10.1 cudatoolkit=11.1 \
-    click numpy pillow psutil requests scipy tensorboard tqdm ninja
+    click numpy=1.23 pillow psutil requests scipy tensorboard tqdm ninja
 fi
+
+"$MAMBA_BIN" run -n "$ENV_NAME" python -m pip install \
+  --extra-index-url "$PYTORCH_CUDA_WHEEL_INDEX" \
+  "torch==$TORCH_VERSION" \
+  "torchvision==$TORCHVISION_VERSION"
 
 "$MAMBA_BIN" run -n "$ENV_NAME" python -m pip install pyspng imageio-ffmpeg==0.4.3
 
