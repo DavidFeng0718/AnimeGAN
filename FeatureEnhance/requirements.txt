@@ -1,0 +1,11 @@
+numpy>=1.26,<3
+Pillow>=10,<12
+pytest>=8,<9
+torch>=2.2,<3
+torchvision>=0.17,<1
+torchmetrics[image]>=1.4,<2
+torch-fidelity>=0.3,<1
+lpips>=0.1.4,<1
+opencv-python-headless>=4.10,<5
+pandas>=2.2,<3
+tqdm>=4.66,<5
