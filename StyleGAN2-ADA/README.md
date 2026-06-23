@@ -92,14 +92,6 @@ training runs under `/content` while training. When training exits cleanly, it
 compresses that `/content` work directory and copies the archive to
 `/content/drive/MyDrive/alibaba`.
 
-For anime face crops, keep the notebook default `AUGPIPE=color` when resuming.
-The earlier `bgc` setting includes geometric rotations and can make the model
-learn sideways faces. To resume from the 604 kimg checkpoint, leave
-`RESUME_MODE=snapshot_kimg` and `RESUME_KIMG=604`. If the Colab runtime was
-restarted, set `RESTORE_ARCHIVE` to the previous backup zip in
-`/content/drive/MyDrive/alibaba` first, or set `RESUME_PKL` manually with
-`RESUME_MODE=manual_path`.
-
 The script accepts any of these sources:
 
 ```bash
