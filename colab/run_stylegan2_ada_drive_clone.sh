@@ -9,10 +9,13 @@ DRIVE_DATASET_PATH="${DRIVE_DATASET_PATH:-/content/drive/MyDrive/$DATASET_ZIP_NA
 CONTENT_DATASET_PATH="${CONTENT_DATASET_PATH:-/content/$DATASET_ZIP_NAME}"
 AUGPIPE="${AUGPIPE:-bgc}"
 
-python - <<'PY'
-from google.colab import drive
-drive.mount('/content/drive')
-PY
+if [[ ! -d "/content/drive/MyDrive" ]]; then
+  echo "Google Drive is not mounted at /content/drive/MyDrive." >&2
+  echo "Run this in a Colab Python cell before this script:" >&2
+  echo "  from google.colab import drive" >&2
+  echo "  drive.mount('/content/drive')" >&2
+  exit 1
+fi
 
 if [[ ! -f "$DRIVE_DATASET_PATH" ]]; then
   echo "Dataset zip not found in Google Drive root: $DRIVE_DATASET_PATH" >&2
