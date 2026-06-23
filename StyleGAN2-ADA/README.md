@@ -9,6 +9,7 @@ Source: https://github.com/NVlabs/stylegan2-ada-pytorch
 
 - `upstream/`: official NVlabs StyleGAN2-ADA PyTorch source copied from GitHub.
 - `configs/baseline.json`: baseline experiment config for the local AnimeGAN dataset.
+- `configs/animefaces_512.json`: Kaggle animefaces-danbooru 512x512 config.
 - `sg2ada/`: project wrapper package for config validation, dataset preparation,
   device handling, training launch, and sample generation.
 - `train.py`: backward-compatible JSON-config training entrypoint.
@@ -65,6 +66,57 @@ Fast startup smoke test:
 cd StyleGAN2-ADA
 python train.py --config configs/smoke.json
 ```
+
+## Kaggle Animefaces 512
+
+The 512 config targets the Kaggle dataset at
+`https://www.kaggle.com/datasets/lukexng/animefaces-512x512`. The data itself is
+not committed; `datasets/` is ignored because the prepared StyleGAN archive is
+large.
+
+Prepare the dataset archive for StyleGAN2-ADA:
+
+```bash
+cd StyleGAN2-ADA
+scripts/prepare_animefaces_512.sh
+```
+
+The script accepts any of these sources:
+
+```bash
+SOURCE_DIR=/path/to/extracted/images scripts/prepare_animefaces_512.sh
+SOURCE_ZIP=/path/to/animefaces.zip scripts/prepare_animefaces_512.sh
+```
+
+If neither source is supplied, it tries the Kaggle CLI first:
+
+```bash
+pip install kaggle
+export KAGGLE_USERNAME=...
+export KAGGLE_KEY=...
+scripts/prepare_animefaces_512.sh
+```
+
+It also supports `kagglehub` when that package is already installed. The script
+creates `datasets/animefaces_512.zip` using the upstream `dataset_tool.py` with a
+512x512 center crop and Lanczos resize, then runs a dry-run training validation.
+
+Train after preparation:
+
+```bash
+cd StyleGAN2-ADA
+python train.py --config configs/animefaces_512.json
+```
+
+Or prepare and launch in one command:
+
+```bash
+RUN_TRAIN=1 scripts/prepare_animefaces_512.sh
+```
+
+The default 512 run uses `cfg=auto`, `aug=ada`, `augpipe=bgc`, mirroring,
+`batch_size=8`, and `kimg=5000`. Override these by copying
+`configs/animefaces_512.json` or by generating a runtime config as needed.
 
 The baseline uses `../dataset`, center-crops images to `64x64`, creates
 `datasets/animegan_64.zip`, and trains with:

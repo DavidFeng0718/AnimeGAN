@@ -41,6 +41,15 @@ def test_build_train_command_exposes_subset_and_gamma():
     assert "noresume" in command
 
 
+def test_animefaces_512_config_loads():
+    _, config = load_config(PROJECT_DIR / "configs" / "animefaces_512.json")
+
+    assert config["dataset_name"] == "animefaces_danbooru_512"
+    assert config["image_size"] == 512
+    assert config["dataset_zip"] == "datasets/animefaces_512.zip"
+    assert config["batch_size"] == 8
+
+
 def test_latest_snapshot_picks_newest(tmp_path):
     run_root = tmp_path / "runs"
     first = run_root / "exp" / "00000-test" / "network-snapshot-000001.pkl"
