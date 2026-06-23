@@ -73,18 +73,9 @@ fi
 export STYLEGAN_DATASET_ZIP="$DATASET_DEST"
 
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+python -m pip install -r requirements.txt --upgrade-strategy only-if-needed
 
-python - <<'PY'
-import torch
-
-print("torch:", torch.__version__)
-print("cuda available:", torch.cuda.is_available())
-if torch.cuda.is_available():
-    print("cuda device:", torch.cuda.get_device_name(0))
-else:
-    raise SystemExit("CUDA is not available. In Colab, set Runtime > Change runtime type > GPU.")
-PY
+python -m sg2ada.env --check --require-cuda
 
 RUN_CONFIG="$CONFIG"
 if [[ -n "${KIMG:-}" || -n "${BATCH:-}" || -n "${SNAP:-}" || -n "${AUGPIPE:-}" ]]; then
