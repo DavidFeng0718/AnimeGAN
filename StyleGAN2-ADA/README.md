@@ -81,6 +81,17 @@ cd StyleGAN2-ADA
 scripts/prepare_animefaces_512.sh
 ```
 
+Colab one-click notebook:
+
+```text
+colab/stylegan2_ada_512_one_click.ipynb
+```
+
+The notebook keeps the repository, Kaggle download cache, prepared dataset, and
+training runs under `/content` while training. When training exits cleanly, it
+compresses that `/content` work directory and copies the archive to
+`/content/drive/MyDrive/alibaba`.
+
 The script accepts any of these sources:
 
 ```bash
