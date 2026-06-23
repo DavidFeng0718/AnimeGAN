@@ -125,9 +125,12 @@ Or prepare and launch in one command:
 RUN_TRAIN=1 scripts/prepare_animefaces_512.sh
 ```
 
-The default 512 run uses `cfg=auto`, `aug=ada`, `augpipe=bgc`, mirroring,
-`batch_size=8`, and `kimg=5000`. Override these by copying
-`configs/animefaces_512.json` or by generating a runtime config as needed.
+The default 512 run uses `cfg=auto`, `aug=ada`, `augpipe=color`, mirroring,
+`batch_size=64`, `snap=50`, `allow_tf32=true`, `nhwc=true`, and `kimg=5000`.
+`color` avoids the rotation/translation geometry in `bgc`, which can make a
+portrait-only face dataset drift into sideways faces. If a smaller Colab GPU
+runs out of memory, set `BATCH_SIZE=32`, `16`, or `8` in the notebook or copy
+the config and lower `"batch_size"`.
 
 The baseline uses `../dataset`, center-crops images to `64x64`, creates
 `datasets/animegan_64.zip`, and trains with:

@@ -47,7 +47,11 @@ def test_animefaces_512_config_loads():
     assert config["dataset_name"] == "animefaces_danbooru_512"
     assert config["image_size"] == 512
     assert config["dataset_zip"] == "datasets/animefaces_512.zip"
-    assert config["batch_size"] == 8
+    assert config["batch_size"] == 64
+    assert config["snap"] == 50
+    assert config["augpipe"] == "color"
+    assert config["allow_tf32"] is True
+    assert config["nhwc"] is True
 
 
 def test_latest_snapshot_picks_newest(tmp_path):
